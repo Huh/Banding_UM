@@ -1,0 +1,616 @@
+---
+title: "Bird Banding Initial Data Wrangling"
+author: "Josh Nowak"
+output: html_document
+---
+
+***
+
+### Capture Data Wrangling
+The initial steps taken involved little more than subsetting to the columns relevant to the analysis and formatting the values in some rows (e.g. dates).  Data wrangling naturally leads to data exploration and so the end of this document is a series of summary tables and plots.
+
+```{r, warning = F, error = F}
+    #  Load Packages
+    suppressMessages(require(plotly))
+    suppressMessages(require(tidyr))
+    suppressMessages(require(dplyr))
+
+    #  Initial data handling - 2 data sets
+    raw <- read.csv(
+      file.path("C:/Users/josh.nowak/Documents/BirdMR",
+        "/data/originals/MASTER_BANDING DATA 2007_FALL 2015_for Josh.csv"), 
+      as.is = T)
+    colnames(raw) <- tolower(colnames(raw))
+
+    #  Subset to necessary columns and rename them
+    morph <- raw %>%
+      select(
+        band, date, time, net, 
+        station, season, status, weight, 
+        age, sex, disp, aou
+      ) %>%
+      rename("id" = band) %>%
+      mutate(
+        date = as.Date(date, "%d-%b-%y"),
+        year = as.numeric(format(date, "%Y"))
+      )
+```
+
+***
+
+As a data checking step below are some unique values and summaries of individual columns.
+
+#### Band ID
+- Number of band id's that are NA: `r sum(is.na(morph$id))`
+- Number of unique band id's: `r length(unique(morph$id))`
+
+#### Date/Time
+- Date range: `r range(morph$date, na.rm = T)`
+- Number of missing dates: `r sum(is.na(morph$date))`
+- Range of times: `r range(morph$time, na.rm = T)`
+- Number of missing time entries: `r sum(is.na(morph$time))`
+- Number of time entries equal to zero: `r sum(morph$time == 0, na.rm = T)`
+
+#### Net
+- Unique values of net: `r unique(morph$net)`
+- Number of missing net entries: `r sum(morph$net == "", na.rm = T)`
+*Nets NM, T2, T1 and P3 do not exist in the effort file.*
+
+#### Station
+- Unique values of station: `r unique(morph$station)`
+- Number of missing station entries: `r sum(morph$station == "")`
+- Table of the number of observations at each station:
+```{r, echo = F, warning = F, error = F} 
+  cnt <- count(morph, station)
+  vec <- cnt$n
+  names(vec) <- cnt$station
+  vec
+```
+
+#### Season
+- Unique values of season: `r unique(morph$season)`
+- Number of missing values of season: `r sum(is.na(morph$season))`
+- Table of the number of observations in each season:
+```{r, echo = F, warning = F, error = F} 
+  cnt <- count(morph, season)
+  vec <- cnt$n
+  names(vec) <- cnt$season
+  vec
+```
+
+#### Status
+- Unique values of status: `r unique(morph$status)`
+- Number of status entries that are 0 or NA: 
+`r sum(is.na(morph$status) | morph$status == 0, na.rm = T)`
+- Table of the number of observations in each status:
+```{r, echo = F, warning = F, error = F} 
+  cnt <- count(morph, status)
+  vec <- cnt$n
+  names(vec) <- cnt$status
+  vec
+```
+
+#### Weight
+- Range of weights: `r range(morph$weight, na.rm = T)`
+- Number of missing weight entries: `r sum(is.na(morph$weight))`
+
+#### Age
+- Unique values of age: `r sort(unique(morph$age))`
+- Number of missing age entries: `r sum(is.na(morph$age) | morph$age == "", na.rm = T)`
+- Table of the number in each age: 
+```{r, echo = F, warning = F, error = F} 
+  cnt <- count(morph, age)
+  vec <- cnt$n
+  names(vec) <- cnt$age
+  vec
+```
+
+#### Sex
+- Unique values of sex: `r sort(unique(morph$sex))`
+- Number of missing age entries: `r sum(is.na(morph$sex) | morph$sex == "", na.rm = T)`
+- Table of the number in each sex: 
+```{r, echo = F, warning = F, error = F} 
+  cnt <- count(morph, sex)
+  vec <- cnt$n
+  names(vec) <- cnt$sex
+  vec
+```
+
+#### Species
+- Number of unique values for AOU: `r length(unique(morph$aou))`
+- Number of missing values in AOU: `r sum(is.na(morph$aou) | morph$aou == "", na.rm = T)`
+
+### Capture Data Remedial Action - *subject to change*
+1. Remove rows with missing band id
+2. Remove rows with missing dates
+3. Remove rows where time equals 0
+4. Convert net entries to numeric, which will cause 2 and 02 to be the same, while values with characters like NM will become NA.  The NA entries will be retained until models with effort are run and then they will be removed.
+5. Remove 2 rows with missing station information
+6. For the time being status, weight and age discrepencies will be ignored.  We will revisit these issues if they seem useful as covariates later in the analysis.
+7. Sex will be ignored for now, but will likely be modeled later.
+8. Remove 29 rows where AOU is missing.
+
+
+```{r, warning = F, error = F}
+    #  Clean morphed data
+    clean <- morph %>%
+      filter(
+        !is.na(id),
+        !is.na(date),
+        time > 0,
+        station != "",
+        !is.na(aou),
+        aou != ""
+      ) %>%
+      mutate(
+        net = as.numeric(net)
+      )
+```
+
+The number of rows lost due to data cleaning is `r format(nrow(morph) - nrow(clean), big.mark = ",")`.
+
+***
+
+### Effort Data Wrangling
+The date column in the original data was half YYYYMMDD and half 5-digit Excel secret code. To fix this issue I manually changed the formats to be same in Excel before reading the data into R.  The data were read into R, the columns renamed, dates mutated into a date class and the net entries made numeric.
+
+```{r, warning = F, error = F}
+    #  Load effort data
+    eff <- read.csv(
+        file.path(
+          "C:/Users/josh.nowak/Documents/BirdMR",
+          "/data/originals/Effort_ALLYears_BEVP&FALL_For Josh.csv"
+        ), as.is = T
+      ) %>%
+      .[,1:6] %>%
+      rename(
+        "year" = YEAR,
+        "season" = LOC,
+        "station" = STATION,
+        "date" = DATE,
+        "net" = NET.,
+        "net_hours" = NET.HOURS    
+      ) %>%
+      mutate(
+        date = as.Date(date, "%m/%d/%Y"),
+        net = as.numeric(net)
+      )
+```
+
+***
+
+Similar to the capture data we now explore each row of data.
+
+#### Year
+- Unique values of year: `r unique(eff$year)`
+- Number of missing values: `r sum(is.na(eff$year) | eff$year == "", na.rm = T)`
+- Do all values have a match in the capture data? 
+`r all(unique(clean$year) %in% unique(eff$year))`
+- Value(s) in capture data that have no match in the effort data:
+`r unique(clean$year)[!unique(clean$year) %in% unique(eff$year)]`
+- Table of number of observations by value:
+```{r, echo = F, warning = F, error = F} 
+  cnt <- count(eff, year)
+  vec <- cnt$n
+  names(vec) <- cnt$year
+  vec
+```
+
+#### Season
+- Unique values of season: `r unique(eff$season)`
+- Number of missing values: `r sum(is.na(eff$season) | eff$season == "", na.rm = T)`
+- Do all values have a match in the capture data? 
+`r all(unique(clean$season) %in% unique(eff$season))`
+- Value(s) in capture data that have no match in the effort data:
+`r unique(clean$season)[!unique(clean$season) %in% unique(eff$season)]`
+- Table of number of observations by value:
+```{r, echo = F, warning = F, error = F} 
+  cnt <- count(eff, season)
+  vec <- cnt$n
+  names(vec) <- cnt$season
+  vec
+```
+
+#### Station
+- Unique values of station: `r unique(eff$station)`
+- Number of missing values: `r sum(is.na(eff$station) | eff$station == "", na.rm = T)`
+- Do all values have a match in the capture data? 
+`r all(unique(clean$station) %in% unique(eff$station))`
+- Value(s) in capture data that have no match in the effort data:
+`r unique(clean$station)[!unique(clean$station) %in% unique(eff$station)]`
+- Table of number of observations by value:
+```{r, echo = F, warning = F, error = F} 
+  cnt <- count(eff, station)
+  vec <- cnt$n
+  names(vec) <- cnt$station
+  vec
+```
+
+#### Date
+- Range of dates: `r range(eff$date, na.rm = T)`
+- Number of missing date entries: `r sum(is.na(eff$date))`
+- Value(s) in capture data that have no match in the effort data:
+`r unique(clean$date)[!unique(clean$date) %in% unique(eff$date)]`
+
+#### Net
+- Unique values of net: `r unique(eff$net)`
+- Number of missing values: `r sum(is.na(eff$net) | eff$net == "", na.rm = T)`
+- Do all values have a match in the capture data? 
+`r all(unique(clean$net) %in% unique(eff$net))`
+- Value(s) in capture data that have no match in the effort data:
+`r unique(clean$net)[!unique(clean$net) %in% unique(eff$net)]`
+- Table of number of observations by value:
+```{r, echo = F, warning = F, error = F} 
+  cnt <- count(eff, net)
+  vec <- cnt$n
+  names(vec) <- cnt$net
+  vec
+```
+
+#### Net Hours
+- Range of net hours: `r range(eff$net_hours, na.rm = T)`
+- Number of missing net hour entries: `r sum(is.na(eff$net_hours))`
+
+### Effort Data Remedial Action - *subject to change*
+1. None taken at this time.  We will address the effort issue when it is needed within the model.  
+
+***
+
+### Combine Capture and Effort Data
+```{r, warning = F, error = F}
+     #  Combine each capture with effort data
+     band <- left_join(clean, eff)
+```
+ 
+***
+ 
+### Data Exploration
+#### Summary of captures by station, season and year
+*Tables in this document can be manipulated in a number of ways.  You may use the buttons to show/hide columns.  You can drag and drop columns to rearrange them.  You can filter using the boxes at the top of each column.  Sorting is accomplished by clicking on the arrows next to the column names.  A nice printable view of each page can be rendered by clicking print.  Finally, the number of rows displayed can be changed using the box in the top left.*
+```{r, echo = F, warning = F, error = F}
+
+    summ_caps <- band %>% 
+      group_by(station, season, year) %>% 
+      summarise(
+        birds = n(), 
+        males = sum(sex == "M"), 
+        females = sum(sex == "F")
+      ) %>%
+      arrange(station, year, season)
+
+    DT::datatable(summ_caps,
+            escape = T,
+            style = 'bootstrap',
+            selection = 'multiple',
+            rownames = FALSE,
+            filter = list(position = 'top', clear = F),
+            extensions = c('ColReorder', 'TableTools', 'ColVis'),
+		    options = list(
+		        pageLength = 5,
+                dom = 'C<"clear">T<"clear">Rltirp',
+                lengthMenu = list(c(5, 10, 20, -1),
+                                  c('5', '10', '20', 'All')),
+                tableTools = list(sSwfPath = DT::copySWF())))
+```
+
+***
+
+#### Summary of captures through time
+```{r, echo = F, warning = F, error = F}
+  long <- band %>%
+    group_by(id) %>%
+    summarise(
+      AOU = aou[1],
+      TotalCaptures = n(),
+      FirstCapture = min(date),
+      LastCapture = max(date),
+      Duration = LastCapture - FirstCapture,
+      MultiYear = length(unique(year)) > 1
+    ) %>%
+    arrange(desc(Duration), TotalCaptures)
+
+    DT::datatable(long,
+            escape = T,
+            style = 'bootstrap',
+            selection = 'multiple',
+            rownames = FALSE,
+            filter = list(position = 'top', clear = F),
+            extensions = c('ColReorder', 'TableTools', 'ColVis'),
+		    options = list(
+		        pageLength = 5,
+                dom = 'C<"clear">T<"clear">Rltirp',
+                lengthMenu = list(c(5, 10, 20, -1),
+                                  c('5', '10', '20', 'All')),
+                tableTools = list(sSwfPath = DT::copySWF())))
+```
+
+***
+
+#### Captures by time of day - All species
+```{r, echo = F, warning = F, error = F}
+    summ_sptime <- band %>%
+      count(time)
+
+    #  Plot yellow warbler captures by time
+    plot_ly(summ_sptime, 
+      x = time, 
+      y = n, 
+      colors = "dodgerblue",
+      type = "bar"
+    )
+```
+
+***
+
+#### Number of captures by species
+```{r, echo = F, warning = F, error = F}
+    #  Summarise captures by species
+    cap_sp <- band %>%
+      count(aou)
+
+    plot_ly(
+      cap_sp,
+      x = aou,
+      y = n,
+      type = "bar"
+    )
+    
+```
+
+***
+
+#### Number of captures by station
+```{r, echo = F, warning = F, error = F}
+    #  Summarise captures by species
+    cap_sp <- band %>%
+      count(station)
+
+    plot_ly(
+      cap_sp,
+      x = station,
+      y = n,
+      type = "bar"
+    )
+    
+```
+
+***
+
+#### Number of captures by season
+```{r, echo = F, warning = F, error = F}
+    #  Summarise captures by species
+    cap_sp <- band %>%
+      count(season)
+
+    plot_ly(
+      cap_sp,
+      x = season,
+      y = n,
+      type = "bar"
+    )
+    
+```
+
+***
+
+#### Number of captures of each species by station, season and year
+```{r, echo = F, warning = F, error = F}
+
+    cap_spstyr <- band %>%
+      count(aou, station, season, year)
+
+    DT::datatable(cap_spstyr,
+            escape = T,
+            style = 'bootstrap',
+            selection = 'multiple',
+            rownames = FALSE,
+            filter = list(position = 'top', clear = F),
+            extensions = c('ColReorder', 'TableTools', 'ColVis'),
+		    options = list(
+		        pageLength = 5,
+                dom = 'C<"clear">T<"clear">Rltirp',
+                lengthMenu = list(c(5, 10, 20, -1),
+                                  c('5', '10', '20', 'All')),
+                tableTools = list(sSwfPath = DT::copySWF())))
+```
+
+***
+
+#### Individual weight - All species
+```{r, echo = F, warning = F, error = F}
+    #  Weight
+    wt_id <- band %>%
+      filter(weight > 0) %>%
+      group_by(id) %>%
+      summarise(
+        mu = mean(weight, na.rm = T),
+        aou = aou[1]
+      ) %>%
+      arrange(aou)
+
+    #  Boxplot of inidividual values
+    plot_ly(wt_id,
+      color = aou,
+      y = mu,
+      type = "box",
+      showlegend = F
+    )
+```
+
+***
+
+#### Time-series of number of captures - All species
+```{r, echo = F, warning = F, error = F}
+  plot_ly(band %>% count(year),
+    x = year,
+    y = n,
+    colors = "dodgerblue"
+  )
+```
+
+***
+
+#### Number of nets deployed on each date
+```{r, echo = F, warning = F, error = F}
+  nnets <- band %>% 
+    group_by(date) %>% 
+    distinct(net, net_hours) %>% 
+    summarise(
+      NumberOfNets = length(unique(net)),
+      Hours = sum(net_hours, na.rm = T)
+    )
+
+  plot_ly(nnets,
+    x = date,
+    y = NumberOfNets,
+    colors = "dodgerblue",
+    type = "bar"
+  )
+  
+
+```
+
+***
+
+#### Net hours by date
+```{r, echo = F, warning = F, error = F}
+  nnets <- band %>% 
+    group_by(date) %>% 
+    distinct(net, net_hours) %>% 
+    summarise(
+      NumberOfNets = length(unique(net)),
+      Hours = sum(net_hours, na.rm = T)
+    )
+
+  plot_ly(nnets,
+    x = date,
+    y = Hours,
+    colors = "dodgerblue",
+    type = "bar"
+  )
+  
+
+```
+
+***
+
+#### Net hours by station
+```{r, echo = F, warning = F, error = F}
+  nnets <- band %>% 
+    group_by(station) %>% 
+    distinct(net, net_hours) %>% 
+    summarise(
+      NumberOfNets = length(unique(net)),
+      Hours = sum(net_hours, na.rm = T)
+    )
+
+  plot_ly(nnets,
+    x = station,
+    y = Hours,
+    colors = "dodgerblue",
+    type = "bar"
+  )
+  
+
+```
+*The lack of effort at several stations reflects the fact that there is no effort data for these stations.*
+
+***
+
+### Yellow Warbler Exploration
+
+#### Time-series of number of captures - Yellow Warbler
+```{r, echo = F, warning = F, error = F}
+  plot_ly(band %>% filter(aou == "YEWA") %>% count(year),
+    x = year,
+    y = n,
+    colors = "dodgerblue"
+  )
+```
+
+***
+
+#### Time-series of number of captures by sex - Yellow Warbler
+```{r, echo = F, warning = F, error = F}
+  pal <- c("#dc143c", "#1e90ff", "#d2b48c", "#808080", "#000000")
+  plot_ly(band %>% filter(aou == "YEWA") %>% count(year, sex),
+    x = year,
+    y = n,
+    color = sex,
+    colors = pal
+  )
+```
+
+***
+
+#### Compare weight by season - Yellow Warbler
+```{r, echo = F, warning = F, error = F}
+    wt_season <- band %>%
+      filter(aou == "YEWA", !is.na(id), weight > 0)
+
+    #  Boxplot of weight by season
+    plot_ly(wt_season,
+      color = season,
+      colors = pal,
+      y = weight,
+      type = "box",
+      showlegend = F
+    )
+
+
+```
+
+***
+
+#### Captures by time of day - Yellow warbler
+```{r, echo = F, warning = F, error = F}
+    summ_sptime <- band %>%
+      count(time, aou)
+
+    #  Plot yellow warbler captures by time
+    plot_ly(filter(summ_sptime, aou == "YEWA"), 
+      x = time, 
+      y = n, 
+      colors = "dodgerblue",
+      type = "bar"
+    )
+```
+
+*Interesting that so many more birds are captured at the beginning of each hour.*
+
+***
+
+#### Recaptures - animals with 0 removed for the sake of brevity
+```{r, echo = F, warning = F, error = F}
+  recap <- band %>%
+    filter(aou == "YEWA") %>%
+    count(id, year) %>%
+    group_by(id) %>%
+    filter(length(unique(year)) > 1)
+
+    DT::datatable(recap,
+            escape = T,
+            style = 'bootstrap',
+            selection = 'multiple',
+            rownames = FALSE,
+            filter = list(position = 'top', clear = F),
+            extensions = c('ColReorder', 'TableTools', 'ColVis'),
+		    options = list(
+		        pageLength = 5,
+                dom = 'C<"clear">T<"clear">Rltirp',
+                lengthMenu = list(c(5, 10, 20, -1),
+                                  c('5', '10', '20', 'All')),
+                tableTools = list(sSwfPath = DT::copySWF())))
+```
+
+*Number of birds captured in multiple years `r length(unique(recap$id))`.*
+
+
+***
+
+
+
+
+
+
+
