@@ -32,6 +32,9 @@ The initial steps taken involved little more than subsetting to the columns rele
       rename("id" = band) %>%
       mutate(
         date = as.Date(date, "%d-%b-%y"),
+        station = toupper(station),
+        season = toupper(season),
+        aou = toupper(aou),
         year = as.numeric(format(date, "%Y"))
       )
 ```
@@ -258,8 +261,16 @@ Similar to the capture data we now explore each row of data.
 
 ### Combine Capture and Effort Data
 ```{r, warning = F, error = F}
-     #  Combine each capture with effort data
-     band <- left_join(clean, eff)
+    #  Combine each capture with effort data
+    band <- left_join(clean, eff)
+
+    #  Save band data
+    save(band, file = 
+      file.path(
+        "C:/Users/josh.nowak/Documents/BirdMR",
+        "/data/working/band_data.RData"
+      )
+    )
 ```
  
 ***
@@ -580,7 +591,7 @@ Similar to the capture data we now explore each row of data.
 
 ***
 
-#### Recaptures - animals with 0 removed for the sake of brevity
+#### Yellow Warbler recaptures - animals with 0 removed for the sake of brevity
 ```{r, echo = F, warning = F, error = F}
   recap <- band %>%
     filter(aou == "YEWA") %>%
@@ -608,9 +619,67 @@ Similar to the capture data we now explore each row of data.
 
 ***
 
+<!-- #### Age Ratios -->
+<!-- ```{r, echo = F, warning = F, error = F} -->
+<!--     age_ratio <- band %>% -->
+<!--       filter(!age %in% c(0, 9)) %>% -->
+<!--       mutate( -->
+<!--         ageclass = NA, -->
+<!--         ageclass = ifelse(age %in% c(2, 4), "juv", "adult") -->
+<!--       ) %>% -->
+<!--       group_by(aou, year) %>% -->
+<!--       summarise( -->
+<!--         N_Juvenile = sum(ageclass == "juv"), -->
+<!--         N_Adult = sum(ageclass == "adult"), -->
+<!--         Age_Ratio = N_Juvenile/N_Adult -->
+<!--       ) %>% -->
+<!--       rename("Species" = aou, "Year" = year) -->
 
+<!--     DT::datatable(age_ratio, -->
+<!--             escape = T, -->
+<!--             style = 'bootstrap', -->
+<!--             selection = 'multiple', -->
+<!--             rownames = FALSE, -->
+<!--             filter = list(position = 'top', clear = F), -->
+<!--             extensions = c('ColReorder', 'TableTools', 'ColVis'), -->
+<!-- 		    options = list( -->
+<!-- 		        pageLength = 5, -->
+<!--                 dom = 'C<"clear">T<"clear">Rltirp', -->
+<!--                 lengthMenu = list(c(5, 10, 20, -1), -->
+<!--                                   c('5', '10', '20', 'All')), -->
+<!--                 tableTools = list(sSwfPath = DT::copySWF()))) -->
+<!-- ``` -->
 
+***
 
+<!-- #### Sex Ratios -->
 
+<!-- ```{r, echo = F, warning = F, error = F} -->
+<!--     sex_rats <- band %>% -->
+<!--       filter(sex %in% c("F", "M")) %>% -->
+<!--       group_by(aou, year) %>% -->
+<!--       summarise( -->
+<!--         N_Females = sum(sex == "F"), -->
+<!--         N_Males = sum(sex == "M"), -->
+<!--         SexRatio = round(N_Males/N_Females, 2) -->
+<!--       ) %>% -->
+<!--       ungroup() -->
+
+<!--     DT::datatable(sex_rats, -->
+<!--             escape = T, -->
+<!--             style = 'bootstrap', -->
+<!--             selection = 'multiple', -->
+<!--             rownames = FALSE, -->
+<!--             filter = list(position = 'top', clear = F), -->
+<!--             extensions = c('ColReorder', 'TableTools', 'ColVis'), -->
+<!-- 		    options = list( -->
+<!-- 		        pageLength = 5, -->
+<!--                 dom = 'C<"clear">T<"clear">Rltirp', -->
+<!--                 lengthMenu = list(c(5, 10, 20, -1), -->
+<!--                                   c('5', '10', '20', 'All')), -->
+<!--                 tableTools = list(sSwfPath = DT::copySWF()))) -->
+<!-- ``` -->
+
+***
 
 
