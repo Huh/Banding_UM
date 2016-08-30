@@ -203,4 +203,59 @@
       )
     })
 ################################################################################
+    #  Summarise weight and sex information
+    mg_weight <- megan %>% 
+      group_by(aou) %>% 
+      summarise(
+        MedianWeight = median(weight, na.rm = T)
+      )
+    write.csv(mg_weight, file = 
+      "C:/Users/josh.nowak/Documents/BirdMR/tables/mg_weight_summary.csv"
+    )
+    
+    dv_weight <- dave %>%
+      group_by(aou) %>% 
+      summarise(
+        MedianWeight = median(weight, na.rm = T)
+      )
+    write.csv(dv_weight, file = 
+      "C:/Users/josh.nowak/Documents/BirdMR/tables/dv_weight_summary.csv"
+    )
+    
+    #  Sex summary
+    mg_sex <- megan %>% 
+      count(aou, sex)
+      
+    write.csv(mg_sex, file = 
+      "C:/Users/josh.nowak/Documents/BirdMR/tables/mg_sex_counts.csv"
+    )
+    
+    dv_sex <- dave %>% 
+      count(aou, sex)
+      
+    write.csv(dv_sex, file = 
+      "C:/Users/josh.nowak/Documents/BirdMR/tables/dv_sex_counts.csv"
+    )
+    
+
+    #  Summarise age information
+    mg_age <- megan %>% count(aou, age)
+    mg_ageyr <- megan %>% count(aou, year, age)
+    
+    write.csv(mg_age, file = 
+      "C:/Users/josh.nowak/Documents/BirdMR/tables/mg_age_counts.csv"
+    )
+    write.csv(mg_ageyr, file = 
+      "C:/Users/josh.nowak/Documents/BirdMR/tables/mg_agebyyear_counts.csv"
+    )
+    dv_age <- dave %>% count(aou, age)
+    dv_ageyr <- dave %>% count(aou, year, age)
+    
+    write.csv(dv_age, file = 
+      "C:/Users/josh.nowak/Documents/BirdMR/tables/dv_age_counts.csv"
+    )
+    write.csv(dv_ageyr, file = 
+      "C:/Users/josh.nowak/Documents/BirdMR/tables/dv_agebyyear_counts.csv"
+    )
+################################################################################
     #  End
