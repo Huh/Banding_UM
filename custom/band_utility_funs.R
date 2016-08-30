@@ -117,3 +117,81 @@
       )
     }
 ################################################################################
+    recaps <- function(x){
+      x %>%
+        group_by(id, aou) %>%
+        summarise(nyr = length(unique(year))) %>%
+        ungroup() %>%
+        filter(nyr > 1) %>%
+        group_by(aou) %>%
+        summarise(
+          nind = n(),
+          nrecap = sum(nyr, na.rm = T)
+        )
+    }
+################################################################################
+    band_wrapper <- function(x, band_sp, band_stn, band_yr, band_seasn, parms){
+      #  A function to wrap the analysis into a single step
+      #  Takes banding data (x), species to consider (band_sp), 
+      #   station to consider (band_stn), year to consider (band_yr), 
+      #   season to consider (band_seasn) and the parameters to monitor (parms).  
+      #   Most inputs are defined by the data, but they may also be NULL.  
+      #   The function expects the data to have columns:
+      #   id, date, time, net, station, season, status, weight, age, sex, disp,
+      #   aou, year
+      #  Returns rjags object
+      #  Note: this wrapper is a total hack and should be massaged into a nicer
+      #   function
+      
+      #  Subset data
+      subd <- band_subset(x, band_sp, band_stn, band_yr, band_seasn)
+
+      #  Create encounter history
+      eh <- band_eh(subd)
+
+      #  Create summary of individual level & time constant covariates
+      #sex <- band_sex(subd)
+
+      # #  Summary of annual effort
+      # fill_eff <- expand.grid(
+        # year = min(eff$year, na.rm = T):max(eff$year, na.rm = T),
+        # net_hours = 0
+      # )
+
+      # effort <- eff %>% 
+        # group_by(year) %>%
+        # full_join(., fill_eff) %>%
+        # summarise(
+          # hrs = sum(net_hours, na.rm = T)
+        # )
+
+      #  Get first observation
+      get.first <- function(x) min(which(x == 1))
+      f <- apply(eh[,-1], 1, get.first)
+
+      y <- eh[f < max(f),-1]
+      f <- f[f < max(f)]
+
+      #  Replace NA after capture with 0
+      for(i in 1:length(f)){
+        for(j in (f[i] + 1):ncol(y)){
+          y[i,j] <- ifelse(is.na(y[i,j]), 0, y[i,j])
+        }
+      }
+
+      inits <- replicate(3, gen_inits(as.matrix(y)), simplify = F)
+
+      out <- jags(
+        data = list(y = y, f = f, nind = nrow(y), n.occasions = ncol(y)),
+        inits = inits,
+        parameters.to.save = parms,
+        model.file = "C:/Users/josh.nowak/Documents/GitHub/Banding_UM/custom/models/c_c.txt",
+        n.chains = 3,
+        n.iter = 30000,
+        n.burnin = 10000,
+        n.thin = 1, 
+        jags.module = c("glm", "dic")
+      )
+    
+    return(out)
+    }

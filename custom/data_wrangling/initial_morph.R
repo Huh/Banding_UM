@@ -12,20 +12,23 @@
     #  Initial data handling - 2 data sets, but USFS set is only effort
     raw <- read.csv(
       file.path(getwd(),
-        "/data/originals/MASTER_BANDING DATA 2007_FALL 2015_for Josh.csv"), 
+        "/data/originals/megan_data.csv"), 
       as.is = T)
     colnames(raw) <- tolower(colnames(raw))
 
     #  Create lookup of species codes and common names
     #  This only retains the species code for which there are Common-names given
-    dics <- list()
-    dics$species <- raw %>%
-      select(aou, common_name) %>%
-      distinct() %>%
-      filter(common_name != "")
+    # dics <- list()
+    # dics$species <- raw %>%
+      # select(aou, common_name) %>%
+      # distinct() %>%
+      # filter(common_name != "")
 
     #  Subset to necessary columns and rename them
     morph <- raw %>%
+      mutate(
+        date = as.Date(paste(year, month, day, sep = "-"), "%Y-%m-%d")
+      ) %>%
       select(
         band, date, time, net, 
         station, season, status, weight, 
@@ -38,7 +41,7 @@
       )
 
     #  Clean morphed data
-    clean <- morph %>%
+    megan <- morph %>%
       filter(
         !is.na(id),
         !is.na(date),
@@ -46,6 +49,47 @@
         station != "",
         !is.na(aou)
       )
+################################################################################
+    #  Read in USFS data provided by Dave Lockman
+    dave <- read.csv(
+        file.path(getwd(), "data/originals/usfs_data.csv"), 
+        as.is = T,
+        skipNul = T
+      ) %>%
+      rename(
+        "id" = BAND,
+        "date" = DATE,
+        "time" = TIME,
+        "net" = NET,
+        "station" = STATION,
+        "status" = STATUS,
+        "weight" = WEIGHT,
+        "age" = AGE,
+        "sex" = SEX,
+        "disp" = DISP,
+        "aou" = SPEC
+      ) %>%
+      select(
+        id, date, time, net, 
+        station, status, weight, 
+        age, sex, disp, aou
+      ) %>%
+      mutate(
+        season = NA,
+        date = as.Date(date, "%m/%d/%Y"),
+        year = as.numeric(format(date, "%Y"))
+      ) %>%
+      filter(
+        !is.na(id),
+        !is.na(date),
+        time > 0,
+        station != "",
+        !is.na(aou)
+      )
+################################################################################
+    #  Save files separately
+    save(megan, file = "C:/Users/josh.nowak/Documents/GitHub/Banding_UM/data/megan.RData")
+    save(dave, file = "C:/Users/josh.nowak/Documents/GitHub/Banding_UM/data/dave.RData")
 ################################################################################
     #  Load effort data
     eff <- read.csv(

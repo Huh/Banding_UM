@@ -6,15 +6,23 @@
     require(R2jags)
     require(tidyr)
     require(dplyr)
-    
+################################################################################
     #  Load data
+    #  Avian ecology lab's data
     load(
       file.path(
-        "C:/Users/josh.nowak/Documents/BirdMR",
-        "/data/working/band_data.RData"
+        "C:/Users/josh.nowak/Documents/GitHub/Banding_UM/data",
+        "megan.RData"
       )
     )
-    
+    #  USFS data
+    load(
+      file.path(
+        "C:/Users/josh.nowak/Documents/GitHub/Banding_UM/data",
+        "dave.RData"
+      )
+    )
+################################################################################
     #  Load effort data
     eff <- read.csv(
         file.path(
@@ -35,7 +43,7 @@
         date = as.Date(date, "%m/%d/%Y"),
         net = as.character(net)
       )
-
+################################################################################
     #  Source functions
     source(
       file.path(
@@ -44,25 +52,10 @@
       )
     )
 ################################################################################
-    #  Set inputs
-    recaps <- function(x){
-      x %>%
-        group_by(id, aou) %>%
-        summarise(nyr = length(unique(year))) %>%
-        ungroup() %>%
-        filter(nyr > 1) %>%
-        group_by(aou) %>%
-        summarise(
-          nind = n(),
-          nrecap = sum(nyr, na.rm = T)
-        )
-    }
-
-    #  Calculate the number of recaptures spanning more than 1 year
-    recaps(band) %>% as.data.frame
-
+    #  Options for subsetting and the like
     #  Species
-    band_sp <- "GRCA"
+    dave_sp <- recaps(dave) %>% filter(nind > 9) %>% .$aou
+    megan_sp <- recaps(megan) %>% filter(nind > 9) %>% .$aou
     #  Station
     band_stn <- NULL
     #  Year(s)
@@ -72,53 +65,142 @@
     #  Parameters to monitor
     parms <- c("survival", "mean.phi", "mean.p", "detection")
 ################################################################################
-    #  Subset data
-    subd <- band_subset(band, band_sp, band_stn, band_yr, band_seasn)
+    #  Run it by calling wrapper
+    mg <- megan %>%
+      filter(aou %in% megan_sp) %>%
+      group_by(aou) %>%
+      do(fit = try(band_wrapper(., NULL, NULL, NULL, NULL, parms)))
 
-    #  Create encounter history
-    eh <- band_eh(subd)
-
-    #  Create summary of individual level & time constant covariates
-    sex <- band_sex(subd)
-
-    #  Summary of annual effort
-    fill_eff <- expand.grid(
-      year = min(eff$year, na.rm = T):max(eff$year, na.rm = T),
-      net_hours = 0
-    )
-    
-    effort <- eff %>% 
-      group_by(year) %>%
-      full_join(., fill_eff) %>%
-      summarise(
-        hrs = sum(net_hours, na.rm = T)
-      )
-    
-    #  Get first observation
-    get.first <- function(x) min(which(x == 1))
-    f <- apply(eh[,-1], 1, get.first)
+    dv <- dave %>%
+      filter(aou %in% dave_sp) %>%
+      group_by(aou) %>%
+      do(fit = try(band_wrapper(., NULL, NULL, NULL, NULL, parms)))
 ################################################################################
-    y <- eh[f < max(f),-1]
-    f <- f[f < max(f)]
+    #  Plot output
+    p_fun <- function(x, sp){
+      par(mfrow = c(1, 2))
+      hist(x[,"detection"], 
+        freq = F,
+        breaks = 100,
+        col = "black",
+        main = paste(sp, "P(Detection)"),
+        xlab = "Estimate"
+      )
+      lines(density(x[,"detection"]), col = "gray40", lwd = 4)
+      hist(x[,"survival"],
+        freq = F,
+        breaks = 100,
+        col = "dodgerblue", 
+        border = "dodgerblue",
+        main = paste(sp, "P(Survival)"),
+        xlab = "Estimate"
+      )
+      lines(density(x[,"survival"]), col = "#DC143C", lwd = 4)
+    }
     
-    #  Replace NA after capture with 0
-    for(i in 1:length(f)){
-      for(j in (f[i] + 1):ncol(y)){
-        y[i,j] <- ifelse(is.na(y[i,j]), 0, y[i,j])
-      }
+    s_plot <- function(x, sp){
+      par(mfrow = c(1,1))
+      hist(x[,"survival"],
+        freq = F,
+        breaks = 100,
+        col = "dodgerblue",
+        border = "dodgerblue",
+        main = paste(sp, "P(Survival)"),
+        xlab = "Estimate"
+      )
+      lines(density(x[,"survival"]), col = "#DC143C", lwd = 4)
     }
 
-    inits <- replicate(3, gen_inits(as.matrix(y)), simplify = F)
+    #  Plot megan's data
+    lapply(1:nrow(mg), function(i){
+      tmp <- do.call(rbind, as.mcmc(mg$fit[[i]]))
 
-    fit <- jags(
-      data = list(y = y, f = f, nind = nrow(y), n.occasions = ncol(y)),
-      inits = inits,
-      parameters.to.save = parms,
-      model.file = "C:/Users/josh.nowak/Documents/GitHub/Banding_UM/custom/models/c_c.txt",
-      n.chains = 3,
-      n.iter = 3000,
-      n.burnin = 1000,
-      n.thin = 1, 
-      jags.module = c("glm", "dic")
-    )
+      png(
+        file.path(
+          "C:/Users/josh.nowak/Documents/BirdMR/plots",
+          paste0("mg_", mg[i,1], ".png")
+        ),
+        width = 9,
+        height = 9,
+        units = "in",
+        res = 600
+      )
+      
+      p_fun(tmp, mg[i,1])
+
+      dev.off()
+      
+      png(
+        file.path(
+          "C:/Users/josh.nowak/Documents/BirdMR/plots",
+          paste0("mg_surv_", mg[i,1], ".png")
+        ),
+        width = 9,
+        height = 9,
+        units = "in",
+        res = 600
+      )
+      
+      s_plot(tmp, mg[i,1])
+      
+      dev.off()
+    })
+
+    #  Plot Dave's data
+    lapply(1:nrow(dv), function(i){
+      tmp <- do.call(rbind, as.mcmc(dv$fit[[i]]))
+
+      png(
+        file.path(
+          "C:/Users/josh.nowak/Documents/BirdMR/plots",
+          paste0("dv_", dv[i,1], ".png")
+        ),
+        width = 9,
+        height = 9,
+        units = "in",
+        res = 600
+      )
+      
+      p_fun(tmp, dv[i,1])
+
+      dev.off()
+      
+      png(
+        file.path(
+          "C:/Users/josh.nowak/Documents/BirdMR/plots",
+          paste0("dv_surv_", dv[i,1], ".png")
+        ),
+        width = 9,
+        height = 9,
+        units = "in",
+        res = 600
+      )
+      
+      s_plot(tmp, dv[i,1])
+      
+      dev.off()
+    })
 ################################################################################
+    #  Table the results
+    lapply(1:nrow(mg), function(i){
+      write.csv(
+        mg[i,2][[1]][[1]]$BUGS$summary,
+        file =
+          file.path(
+            "C:/Users/josh.nowak/Documents/BirdMR/tables",
+            paste0("mg_table_", mg[i,1], ".csv")
+          )
+      )
+    })
+    lapply(1:nrow(dv), function(i){
+      write.csv(
+        dv[i,2][[1]][[1]]$BUGS$summary,
+        file =
+          file.path(
+            "C:/Users/josh.nowak/Documents/BirdMR/tables",
+            paste0("dv_table_", dv[i,1], ".csv")
+          )
+      )
+    })
+################################################################################
+    #  End
